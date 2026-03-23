@@ -10,6 +10,28 @@ type BeyWithAbbrev = {
   abbrev: string;
 };
 
+type InventoryEntry = {
+  player_id: string;
+  beyblades:
+    | {
+        id: string;
+        name: string;
+        product_code: string | null;
+      }
+    | {
+        id: string;
+        name: string;
+        product_code: string | null;
+      }[]
+    | null;
+};
+
+type InventoryBey = {
+    id: string;
+    name: string;
+    product_code: string | null;
+};
+
 /** Generate kid-friendly abbreviation: prefer product code, else short form */
 function getAbbrev(name: string, productCode: string | null, used: Set<string>): string {
   if (productCode && /^[A-Z]{2}-\d+$/.test(productCode)) {
@@ -80,10 +102,12 @@ export default function BattleLogForm() {
       const stevanList: BeyWithAbbrev[] = [];
       const maxList: BeyWithAbbrev[] = [];
 
-      (inventory ?? []).forEach((entry: any) => {
-        const bey = entry.beyblades;
+      const inventoryRows = (inventory ?? []) as InventoryEntry[];
+      inventoryRows.forEach((entry) => {
+        const bey = Array.isArray(entry.beyblades) ? entry.beyblades[0] : entry.beyblades;
         if (!bey?.name) return;
-        const abbrev = getAbbrev(bey.name, bey.product_code ?? null, abbrevUsed);
+        const normalizedBey = bey as InventoryBey;
+        const abbrev = getAbbrev(normalizedBey.name, normalizedBey.product_code ?? null, abbrevUsed);
         const item = { name: bey.name, abbrev };
         if (entry.player_id === stevan.id) {
           stevanList.push(item);
@@ -110,7 +134,7 @@ export default function BattleLogForm() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-white text-black">
         <Navbar />
         <div className="pt-24 pb-12 px-4">
           <div className="container mx-auto text-center text-lg text-muted-foreground">
@@ -122,7 +146,7 @@ export default function BattleLogForm() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-white text-black">
       <Navbar />
       <main className="pt-24 pb-12 px-4">
         <div className="container mx-auto max-w-4xl">
@@ -160,26 +184,26 @@ export default function BattleLogForm() {
           )}
 
           {/* Printable form */}
-          <div className="bg-card border border-border rounded-xl p-6 md:p-8 shadow-card print:shadow-none print:border print:rounded">
+          <div className="bg-white border border-gray-300 rounded-xl p-6 md:p-8 shadow-sm print:shadow-none print:border print:rounded">
             {/* Title - kid friendly */}
             <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/20 mb-3 print:bg-primary/10">
-                <Swords className="w-8 h-8 text-primary" />
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-3">
+                <Swords className="w-8 h-8 text-black" />
               </div>
-              <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground">
+              <h2 className="font-display text-2xl md:text-3xl font-bold text-black">
                 Let it rip! Battle Log
               </h2>
-              <p className="text-muted-foreground mt-1 text-lg">
+              <p className="text-gray-700 mt-1 text-lg">
                 Stevan vs Max
               </p>
             </div>
 
             {/* Instructions */}
-            <div className="mb-6 p-4 rounded-lg bg-secondary/50 border border-border">
-              <h3 className="font-display font-semibold text-foreground mb-2 text-lg">
+            <div className="mb-6 p-4 rounded-lg bg-gray-50 border border-gray-300">
+              <h3 className="font-display font-semibold text-black mb-2 text-lg">
                 How to use this form
               </h3>
-              <ol className="list-decimal list-inside space-y-1.5 text-foreground text-base">
+              <ol className="list-decimal list-inside space-y-1.5 text-black text-base">
                 <li>Use the abbreviations below when writing which bey you used.</li>
                 <li>Fill in the score after each battle (best of 3 or 5).</li>
                 <li>When you get home, go to <strong>CSV Editor</strong> and type in your battles.</li>
@@ -189,12 +213,12 @@ export default function BattleLogForm() {
 
             {/* Legend: Bey abbreviations */}
             <div className="mb-8">
-              <h3 className="font-display font-semibold text-foreground mb-3 text-lg flex items-center gap-2">
+              <h3 className="font-display font-semibold text-black mb-3 text-lg flex items-center gap-2">
                 <span>Legend – quick abbreviations</span>
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="rounded-lg border border-border p-4 bg-secondary/30">
-                  <h4 className="font-display font-bold text-primary mb-2 text-base">
+                <div className="rounded-lg border border-gray-300 p-4 bg-white">
+                  <h4 className="font-display font-bold text-black mb-2 text-base">
                     Stevan&apos;s beys
                   </h4>
                   {stevanBeys.length === 0 ? (
@@ -205,17 +229,17 @@ export default function BattleLogForm() {
                     <ul className="space-y-1.5 text-sm">
                       {stevanBeys.map((b) => (
                         <li key={b.name} className="flex gap-2 items-baseline">
-                          <span className="font-mono font-bold text-primary min-w-[3rem]">
+                          <span className="font-mono font-bold text-black min-w-[3rem]">
                             {b.abbrev}
                           </span>
-                          <span className="text-foreground">= {b.name}</span>
+                          <span className="text-black">= {b.name}</span>
                         </li>
                       ))}
                     </ul>
                   )}
                 </div>
-                <div className="rounded-lg border border-border p-4 bg-secondary/30">
-                  <h4 className="font-display font-bold text-accent mb-2 text-base">
+                <div className="rounded-lg border border-gray-300 p-4 bg-white">
+                  <h4 className="font-display font-bold text-black mb-2 text-base">
                     Max&apos;s beys
                   </h4>
                   {maxBeys.length === 0 ? (
@@ -226,10 +250,10 @@ export default function BattleLogForm() {
                     <ul className="space-y-1.5 text-sm">
                       {maxBeys.map((b) => (
                         <li key={b.name} className="flex gap-2 items-baseline">
-                          <span className="font-mono font-bold text-accent min-w-[3rem]">
+                          <span className="font-mono font-bold text-black min-w-[3rem]">
                             {b.abbrev}
                           </span>
-                          <span className="text-foreground">= {b.name}</span>
+                          <span className="text-black">= {b.name}</span>
                         </li>
                       ))}
                     </ul>
@@ -242,26 +266,26 @@ export default function BattleLogForm() {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-base">
                 <thead>
-                  <tr className="border-b-2 border-primary">
-                    <th className="text-left py-2 px-2 font-display font-semibold text-foreground w-8">
+                  <tr className="border-b-2 border-black">
+                    <th className="text-left py-2 px-2 font-display font-semibold text-black w-8">
                       #
                     </th>
-                    <th className="text-left py-2 px-2 font-display font-semibold text-foreground min-w-[5rem]">
+                    <th className="text-left py-2 px-2 font-display font-semibold text-black min-w-[5rem]">
                       Date
                     </th>
-                    <th className="text-left py-2 px-2 font-display font-semibold text-primary">
+                    <th className="text-left py-2 px-2 font-display font-semibold text-black">
                       Stevan&apos;s bey
                     </th>
-                    <th className="text-center py-2 px-2 font-display font-semibold text-foreground w-14">
+                    <th className="text-center py-2 px-2 font-display font-semibold text-black w-14">
                       S
                     </th>
-                    <th className="text-left py-2 px-2 font-display font-semibold text-accent">
+                    <th className="text-left py-2 px-2 font-display font-semibold text-black">
                       Max&apos;s bey
                     </th>
-                    <th className="text-center py-2 px-2 font-display font-semibold text-foreground w-14">
+                    <th className="text-center py-2 px-2 font-display font-semibold text-black w-14">
                       M
                     </th>
-                    <th className="text-left py-2 px-2 font-display font-semibold text-foreground min-w-[4rem]">
+                    <th className="text-left py-2 px-2 font-display font-semibold text-black min-w-[4rem]">
                       Winner
                     </th>
                     <th className="text-center py-2 px-2 font-display font-semibold text-muted-foreground w-12">
@@ -277,8 +301,8 @@ export default function BattleLogForm() {
                 </thead>
                 <tbody>
                   {Array.from({ length: BATTLE_ROWS }).map((_, i) => (
-                    <tr key={i} className="border-b border-border">
-                      <td className="py-3 px-2 text-muted-foreground">{i + 1}</td>
+                    <tr key={i} className="border-b border-gray-300">
+                      <td className="py-3 px-2 text-gray-700">{i + 1}</td>
                       <td className="py-3 px-2">
                         <span className="inline-block min-h-[1.5rem] w-full border-b border-dashed border-muted-foreground/40" />
                       </td>
@@ -312,7 +336,7 @@ export default function BattleLogForm() {
               </table>
             </div>
 
-            <p className="text-xs text-muted-foreground mt-4">
+            <p className="text-xs text-gray-700 mt-4">
               S = Stevan&apos;s score · M = Max&apos;s score · B = Bursts · KO = Knockouts · Spin = Spin finishes
             </p>
           </div>
@@ -322,6 +346,8 @@ export default function BattleLogForm() {
       <style>{`
         @media print {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          body, main, .container, table, th, td, p, h1, h2, h3, h4, span { color: #000 !important; }
+          body, main, .container, div, table, thead, tbody, tr, th, td { background: #fff !important; }
           nav { display: none !important; }
           .print\\:hidden { display: none !important; }
           main { padding-top: 0 !important; }
