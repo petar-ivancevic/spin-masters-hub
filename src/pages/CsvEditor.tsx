@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2, Download, Upload, Save } from "lucide-react";
@@ -587,7 +588,11 @@ export default function CsvEditor() {
               CSV <span className="text-gradient-primary">Editor</span>
             </h1>
             <p className="text-muted-foreground">
-              Edit your battle import CSV with validated Beyblade selection
+              Edit your battle import CSV with validated Beyblade selection.{" "}
+              <Link to="/battle-log" className="text-primary hover:underline">
+                Print an offline battle log
+              </Link>{" "}
+              to fill in battles away from the computer.
             </p>
           </div>
 
