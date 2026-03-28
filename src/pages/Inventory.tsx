@@ -339,6 +339,38 @@ export default function Inventory() {
     });
   };
 
+  const handleSaveNotes = async (beyId: string) => {
+    if (!isSupabaseConfigured) return;
+    const inventoryEntry = inventoryEntries.find((entry) => entry.beyblade_id === beyId);
+    if (!inventoryEntry) return;
+
+    const text = (notesDrafts[beyId] ?? "").trim();
+    const notesValue = text.length > 0 ? text : null;
+
+    const { error } = await supabase
+      .from("player_beyblades")
+      .update({ notes: notesValue })
+      .eq("id", inventoryEntry.id);
+
+    if (error) {
+      console.error("Failed to save notes:", error);
+      window.alert(
+        "Could not save notes. In Supabase, run SQL on player_beyblades:\n\n" +
+          "alter table public.player_beyblades add column if not exists notes text;"
+      );
+      return;
+    }
+
+    setInventoryEntries((prev) =>
+      prev.map((entry) =>
+        entry.id === inventoryEntry.id ? { ...entry, notes: notesValue } : entry
+      )
+    );
+    setBeyblades((prev) =>
+      prev.map((bey) => (bey.id === beyId ? { ...bey, notes: notesValue } : bey))
+    );
+  };
+
   const handleAddPlayer = async () => {
     if (!isSupabaseConfigured) return;
 

@@ -61,6 +61,7 @@ create table if not exists public.player_beyblades (
   attack smallint check (attack between 0 and 100),
   defense smallint check (defense between 0 and 100),
   stamina smallint check (stamina between 0 and 100),
+  notes text,
   created_at timestamptz not null default now(),
   unique (player_id, beyblade_id)
 );

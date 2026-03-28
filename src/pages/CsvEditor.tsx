@@ -342,25 +342,28 @@ export default function CsvEditor() {
     window.URL.revokeObjectURL(url);
   };
 
-  const getNextMatchId = async (): Promise<string> => {
+  /** Next match-NNN id from numeric max (string sort on external_id is unreliable). */
+  const getNextMatchId = async (reservedInBatch?: Set<string>): Promise<string> => {
     const { data } = await supabase
       .from("matches")
       .select("external_id")
-      .not("external_id", "is", null)
-      .order("external_id", { ascending: false })
-      .limit(1);
-    
-    if (!data || data.length === 0) {
-      return "match-001";
+      .not("external_id", "is", null);
+
+    let maxNum = 0;
+    for (const row of data ?? []) {
+      const ext = row.external_id;
+      if (typeof ext !== "string") continue;
+      const m = ext.match(/match-(\d+)/i);
+      if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
     }
-    
-    const lastId = data[0].external_id;
-    const match = lastId.match(/match-(\d+)/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      return `match-${String(num + 1).padStart(3, "0")}`;
+
+    let n = maxNum + 1;
+    let candidate = `match-${String(n).padStart(3, "0")}`;
+    while (reservedInBatch?.has(candidate)) {
+      n += 1;
+      candidate = `match-${String(n).padStart(3, "0")}`;
     }
-    return "match-001";
+    return candidate;
   };
 
   const handleImport = async () => {
@@ -381,6 +384,9 @@ export default function CsvEditor() {
     let updateCount = 0;
     let errorCount = 0;
     const errors: string[] = [];
+    const remaps: string[] = [];
+    /** Prevents two rows in one import from sharing the same external_id (would upsert and wipe the first battle). */
+    const seenMatchIdsInBatch = new Set<string>();
 
     for (const row of rows) {
       if (!row.matchId || !row.player1 || !row.player2 || !row.player1Bey || !row.player2Bey) {
@@ -420,6 +426,16 @@ export default function CsvEditor() {
         ? null 
         : (scoreA > scoreB ? player1Id : scoreB > scoreA ? player2Id : player1Id);
 
+      const requestedMatchId = row.matchId.trim();
+      let effectiveMatchId = requestedMatchId;
+      if (seenMatchIdsInBatch.has(effectiveMatchId)) {
+        effectiveMatchId = await getNextMatchId(seenMatchIdsInBatch);
+        remaps.push(
+          `Row ${row.id}: duplicate match_id "${requestedMatchId}" in this import → saved as "${effectiveMatchId}"`
+        );
+      }
+      seenMatchIdsInBatch.add(effectiveMatchId);
+
       // Parse date
       let playedAt: Date;
       if (row.date) {
@@ -438,7 +454,7 @@ export default function CsvEditor() {
       const { data: existingMatch } = await supabase
         .from("matches")
         .select("id")
-        .eq("external_id", row.matchId)
+        .eq("external_id", effectiveMatchId)
         .maybeSingle();
 
       const isUpdate = !!existingMatch;
@@ -449,7 +465,7 @@ export default function CsvEditor() {
         .upsert(
           {
             id: existingMatch?.id,
-            external_id: row.matchId,
+            external_id: effectiveMatchId,
             played_at: Number.isNaN(playedAt.getTime()) ? new Date().toISOString() : playedAt.toISOString(),
             format: "best_of",
             winner_player_id: winnerId || null,
@@ -536,6 +552,11 @@ export default function CsvEditor() {
       `✅ Created: ${successCount}`,
       `🔄 Updated: ${updateCount}`,
       `❌ Errors: ${errorCount}`,
+      ...(remaps.length > 0
+        ? [
+            `\n⚠️ Duplicate match IDs in this sheet were given new IDs so every battle saves separately:\n${remaps.slice(0, 15).join("\n")}${remaps.length > 15 ? `\n... and ${remaps.length - 15} more` : ""}`,
+          ]
+        : []),
       ...(errors.length > 0 ? [`\nErrors:\n${errors.slice(0, 10).join("\n")}${errors.length > 10 ? `\n... and ${errors.length - 10} more` : ""}`] : []),
     ].join("\n");
 
