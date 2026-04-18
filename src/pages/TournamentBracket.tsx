@@ -7,6 +7,7 @@ import {
   buildSingleEliminationPlans,
   keyFor,
   nextPow2,
+  singleElimFirstRoundPlayableCount,
 } from "@/lib/tournamentBracket";
 import { ChevronDown, ChevronUp, Shuffle, Trophy, RefreshCw } from "lucide-react";
 
@@ -213,7 +214,8 @@ export default function TournamentBracket() {
     const entrantCount = Object.keys(entryOwners).length;
     if (entrantCount < 2) return null;
     const slots = nextPow2(entrantCount);
-    return { entrantCount, slots, byes: slots - entrantCount };
+    const playInGames = singleElimFirstRoundPlayableCount(entrantCount);
+    return { entrantCount, slots, byes: slots - entrantCount, playInGames };
   }, [activeTournament?.elimination_type, entryOwners]);
 
   const largeCreateBracketPreview = useMemo(() => {
@@ -283,8 +285,9 @@ export default function TournamentBracket() {
       const P = nextPow2(Math.max(2, ids.length));
       if (P > LARGE_BRACKET_SLOT_WARN || ids.length > LARGE_BRACKET_ENTRANT_WARN) {
         const byeCount = P - ids.length;
+        const playIn = singleElimFirstRoundPlayableCount(ids.length);
         const ok = window.confirm(
-          `Large single-elimination bracket: ${ids.length} entrants → ${P} slots (${byeCount} bye${byeCount === 1 ? "" : "s"}). Create anyway?`
+          `Large single-elimination bracket: ${ids.length} entrants → ${P} slots (${byeCount} empty seed${byeCount === 1 ? "" : "s"}, ${playIn} first-round game${playIn === 1 ? "" : "s"} to play). Create anyway?`
         );
         if (!ok) return;
       }
@@ -824,9 +827,10 @@ export default function TournamentBracket() {
                     <li>
                       <strong className="text-foreground">Single elimination:</strong> any roster from the shared
                       inventory — pick <strong>at least 2</strong> beys (often <strong>all inventory</strong> via the
-                      button below). The bracket always uses the <strong>next power of 2</strong> <em>slots</em> (2, 4,
-                      8, 16, 32, …). Fewer beys than that → <strong>byes</strong> fill empty seeds. Example: 5 beys →
-                      8-slot bracket (3 byes).
+                      button below). The tree uses the <strong>next power of 2</strong> <em>slots</em> (2, 4, 8, 16, 32,
+                      …). Non-powers of two get <strong>play-ins</strong>: only{" "}
+                      <strong className="text-foreground">N − slots/2</strong> first-round games are real head-to-heads
+                      (e.g. 17 beys → 1 play-in, 15 auto-byes), not a full row of extra matches.
                     </li>
                     <li>
                       <strong className="text-foreground">Double elimination:</strong> exactly{" "}
@@ -1009,7 +1013,9 @@ export default function TournamentBracket() {
                     {singleElimBracketSummary && (
                       <p className="text-xs text-muted-foreground mb-2">
                         {singleElimBracketSummary.entrantCount} entrants · {singleElimBracketSummary.slots} bracket slots ·{" "}
-                        {singleElimBracketSummary.byes} bye{singleElimBracketSummary.byes === 1 ? "" : "s"}
+                        {singleElimBracketSummary.byes} empty seed{singleElimBracketSummary.byes === 1 ? "" : "s"} ·{" "}
+                        {singleElimBracketSummary.playInGames} first-round game
+                        {singleElimBracketSummary.playInGames === 1 ? "" : "s"} to play
                       </p>
                     )}
                     <p className="text-xs text-muted-foreground mb-2">
