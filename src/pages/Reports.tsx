@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { supabase } from "@/lib/supabaseClient";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { BarChart, Bar, XAxis, YAxis, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { Button } from "@/components/ui/button";
-import { BarChart3, TrendingUp, Users, Swords } from "lucide-react";
+import { BarChart3, TrendingUp, Users, Swords, Trophy } from "lucide-react";
 
 type PlayerRow = {
   id: string;
@@ -37,12 +38,16 @@ type EventStats = {
 
 const COLORS = ["#f97316", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444", "#f59e0b"];
 
+/** Scope for charts and totals: everything, non-tournament only, or tournament bracket only. */
+type FormatFilter = "all" | "league" | "tournament";
+
 export default function Reports() {
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [beyblades, setBeyblades] = useState<BeybladeRow[]>([]);
   const [selectedPlayer, setSelectedPlayer] = useState<string>("all");
   const [selectedBey, setSelectedBey] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
+  const [formatFilter, setFormatFilter] = useState<FormatFilter>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(false);
 
@@ -60,6 +65,8 @@ export default function Reports() {
     extremeKnockouts: 0,
     spinFinishes: 0,
   });
+  /** Count of `matches` rows with format tournament (bracket logs from /tournament). */
+  const [tournamentGamesTotal, setTournamentGamesTotal] = useState(0);
 
   useEffect(() => {
     const checkSupabase = async () => {
@@ -80,7 +87,7 @@ export default function Reports() {
     if (isSupabaseConfigured) {
       loadStats();
     }
-  }, [selectedPlayer, selectedBey, selectedType, isSupabaseConfigured]);
+  }, [selectedPlayer, selectedBey, selectedType, formatFilter, isSupabaseConfigured]);
 
   const loadData = async () => {
     try {
@@ -100,10 +107,10 @@ export default function Reports() {
 
   const loadStats = async () => {
     try {
-      // Fetch all matches
+      // Fetch all matches (format separates tournament bey-vs-bey from league/casual battles)
       const { data: matches, error: matchesError } = await supabase
         .from("matches")
-        .select("id, winner_player_id");
+        .select("id, winner_player_id, format");
 
       if (matchesError) throw matchesError;
 
@@ -113,12 +120,35 @@ export default function Reports() {
         setTypeStats({});
         setEventStats({ burst: 0, knockout: 0, extreme_knockout: 0, spin_finish: 0 });
         setOverallStats({ total: 0, wins: 0, losses: 0, winRate: 0, bursts: 0, knockouts: 0, extremeKnockouts: 0, spinFinishes: 0 });
+        setTournamentGamesTotal(0);
         return;
       }
 
-      const matchIds = matches.map((m) => m.id);
+      const formatByMatchId: Record<string, string> = {};
+      for (const m of matches) {
+        formatByMatchId[m.id] = (m as { format?: string }).format ?? "single";
+      }
+      const tournamentGamesCount = matches.filter((m) => formatByMatchId[m.id] === "tournament").length;
 
-      // Fetch participants
+      const matchesInScope = matches.filter((m) => {
+        const f = formatByMatchId[m.id];
+        if (formatFilter === "all") return true;
+        if (formatFilter === "league") return f !== "tournament";
+        return f === "tournament";
+      });
+      const matchIds = matchesInScope.map((m) => m.id);
+
+      if (matchIds.length === 0) {
+        setPlayerStats({});
+        setBeyStats({});
+        setTypeStats({});
+        setEventStats({ burst: 0, knockout: 0, extreme_knockout: 0, spin_finish: 0 });
+        setOverallStats({ total: 0, wins: 0, losses: 0, winRate: 0, bursts: 0, knockouts: 0, extremeKnockouts: 0, spinFinishes: 0 });
+        setTournamentGamesTotal(tournamentGamesCount);
+        return;
+      }
+
+      // Fetch participants (only matches in the selected format scope)
       let participantQuery = supabase
         .from("match_participants")
         .select("match_id, player_id, beyblade_id, is_winner, score")
@@ -144,6 +174,7 @@ export default function Reports() {
         setTypeStats({});
         setEventStats({ burst: 0, knockout: 0, extreme_knockout: 0, spin_finish: 0 });
         setOverallStats({ total: 0, wins: 0, losses: 0, winRate: 0, bursts: 0, knockouts: 0, extremeKnockouts: 0, spinFinishes: 0 });
+        setTournamentGamesTotal(tournamentGamesCount);
         return;
       }
 
@@ -172,7 +203,6 @@ export default function Reports() {
 
       // Get unique match IDs from filtered participants
       const filteredMatchIds = new Set(filteredParticipants.map((p: any) => p.match_id));
-      const filteredMatches = matches.filter((m) => filteredMatchIds.has(m.id));
 
       // Fetch events for filtered matches
       const { data: events, error: eventsError } = await supabase
@@ -198,7 +228,7 @@ export default function Reports() {
         spinFinishes: 0,
       };
 
-      // Process events
+      // Process events (tournament 1-pt logs typically have no match_events rows)
       if (events) {
         for (const event of events) {
           if (filteredMatchIds.has(event.match_id)) {
@@ -210,7 +240,7 @@ export default function Reports() {
         }
       }
 
-      // Process participants
+      // Process participants (match set already scoped by format filter)
       if (filteredParticipants && filteredParticipants.length > 0) {
         for (const participant of filteredParticipants) {
           const playerId = participant.player_id;
@@ -218,7 +248,6 @@ export default function Reports() {
           const beyType = beyTypeMap[beyId] || "Unknown";
           const isWinner = participant.is_winner;
 
-          // Player stats
           if (!playerStatsMap[playerId]) {
             playerStatsMap[playerId] = {
               total: 0,
@@ -235,7 +264,6 @@ export default function Reports() {
           if (isWinner) playerStatsMap[playerId].wins++;
           else playerStatsMap[playerId].losses++;
 
-          // Bey stats
           if (!beyStatsMap[beyId]) {
             beyStatsMap[beyId] = {
               total: 0,
@@ -271,7 +299,7 @@ export default function Reports() {
         }
       }
 
-      overall.total = filteredMatches.length;
+      overall.total = new Set(filteredParticipants.map((p: { match_id: string }) => p.match_id)).size;
 
       // Calculate win rates
       Object.keys(playerStatsMap).forEach((id) => {
@@ -303,8 +331,10 @@ export default function Reports() {
       setTypeStats(typeStatsMap);
       setEventStats(eventStatsMap);
       setOverallStats(overall);
+      setTournamentGamesTotal(tournamentGamesCount);
     } catch (error) {
       console.error("Failed to load stats:", error);
+      setTournamentGamesTotal(0);
     }
   };
 
@@ -379,6 +409,28 @@ export default function Reports() {
               Battle <span className="text-gradient-primary">Reports</span>
             </h1>
             <p className="text-muted-foreground">Analyze performance by blader, Beyblade, type, and events</p>
+            <p className="text-xs text-muted-foreground mt-2 max-w-2xl">
+              {formatFilter === "all" && (
+                <>
+                  Use <strong className="text-foreground">Battle source</strong> below to show everything together,{" "}
+                  <strong className="text-foreground">league only</strong> (hide tournament), or{" "}
+                  <strong className="text-foreground">tournament only</strong>. With &quot;All&quot;, every chart uses the
+                  same battle set.
+                </>
+              )}
+              {formatFilter === "league" && (
+                <>
+                  Showing <strong className="text-foreground">league and other logged</strong> battles only; tournament
+                  bracket games are excluded from every chart and total.
+                </>
+              )}
+              {formatFilter === "tournament" && (
+                <>
+                  Showing <strong className="text-foreground">tournament bracket</strong> games only (same rows as the
+                  Tournament page logs).
+                </>
+              )}
+            </p>
           </div>
 
           {!isSupabaseConfigured ? (
@@ -390,7 +442,19 @@ export default function Reports() {
               {/* Filters */}
               <div className="rounded-xl bg-gradient-card border border-border p-6 mb-8">
                 <h2 className="font-display text-lg font-bold text-foreground mb-4">Filters</h2>
-                <div className="grid sm:grid-cols-3 gap-4">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Battle source</label>
+                    <select
+                      value={formatFilter}
+                      onChange={(e) => setFormatFilter(e.target.value as FormatFilter)}
+                      className="h-10 w-full rounded-lg bg-secondary border border-border px-3 text-sm text-foreground"
+                    >
+                      <option value="all">All (league + tournament)</option>
+                      <option value="league">League (excl. tournament)</option>
+                      <option value="tournament">Tournament only</option>
+                    </select>
+                  </div>
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">Blader</label>
                     <select
@@ -443,10 +507,32 @@ export default function Reports() {
                       setSelectedPlayer("all");
                       setSelectedBey("all");
                       setSelectedType("all");
+                      setFormatFilter("all");
                     }}
                   >
                     Clear Filters
                   </Button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 mb-8 flex flex-wrap items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 className="font-display text-sm font-semibold text-foreground flex items-center gap-2">
+                    <Trophy className="w-4 h-4 text-primary shrink-0" />
+                    Tournament bracket games
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-xl">
+                    Logged from the{" "}
+                    <Link to="/tournament" className="text-primary underline underline-offset-2 hover:text-primary/90">
+                      Tournament
+                    </Link>{" "}
+                    page (1 pt wins). This count is database-wide. Use{" "}
+                    <strong className="text-foreground">Battle source → Tournament only</strong> to analyze just those
+                    games in the charts below.
+                  </p>
+                </div>
+                <div className="text-3xl font-bold font-display text-primary tabular-nums shrink-0">
+                  {tournamentGamesTotal}
                 </div>
               </div>
 
@@ -486,7 +572,12 @@ export default function Reports() {
               <div className="grid lg:grid-cols-2 gap-6 mb-8">
                 {/* Player Win Rates */}
                 <div className="rounded-xl bg-gradient-card border border-border p-6">
-                  <h3 className="font-display text-lg font-bold text-foreground mb-4">Top Blader Win Rates</h3>
+                  <h3 className="font-display text-lg font-bold text-foreground mb-1">Top Blader Win Rates</h3>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    {formatFilter === "all" && "Includes league, import/CSV, dashboard, and tournament bracket games."}
+                    {formatFilter === "league" && "League and other logged battles only; tournament excluded."}
+                    {formatFilter === "tournament" && "Tournament bracket games only."}
+                  </p>
                   {playerChartData.length > 0 ? (
                     <ChartContainer config={chartConfig} className="h-[300px]">
                       <BarChart data={playerChartData}>
@@ -503,7 +594,12 @@ export default function Reports() {
 
                 {/* Beyblade Win Rates */}
                 <div className="rounded-xl bg-gradient-card border border-border p-6">
-                  <h3 className="font-display text-lg font-bold text-foreground mb-4">Top Beyblade Win Rates</h3>
+                  <h3 className="font-display text-lg font-bold text-foreground mb-1">Top Beyblade Win Rates</h3>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    {formatFilter === "all" && "Includes league, import/CSV, dashboard, and tournament bracket games."}
+                    {formatFilter === "league" && "League and other logged battles only; tournament excluded."}
+                    {formatFilter === "tournament" && "Tournament bracket games only."}
+                  </p>
                   {beyChartData.length > 0 ? (
                     <ChartContainer config={chartConfig} className="h-[300px]">
                       <BarChart data={beyChartData}>
@@ -581,7 +677,12 @@ export default function Reports() {
 
               {/* Wins vs Losses Comparison */}
               <div className="rounded-xl bg-gradient-card border border-border p-6 mb-8">
-                <h3 className="font-display text-lg font-bold text-foreground mb-4">Blader Performance (Wins vs Losses)</h3>
+                <h3 className="font-display text-lg font-bold text-foreground mb-1">Blader Performance (Wins vs Losses)</h3>
+                <p className="text-xs text-muted-foreground mb-4">
+                  {formatFilter === "all" && "Same battle source as the blader win rate chart above."}
+                  {formatFilter === "league" && "League scope only (tournament excluded)."}
+                  {formatFilter === "tournament" && "Tournament bracket games only."}
+                </p>
                 {playerChartData.length > 0 ? (
                   <ChartContainer config={chartConfig} className="h-[300px]">
                     <BarChart data={playerChartData}>

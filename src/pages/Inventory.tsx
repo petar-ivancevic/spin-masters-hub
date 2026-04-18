@@ -138,47 +138,44 @@ export default function Inventory() {
         inventoryError = inventoryWithNotes.error;
       }
 
-      const [
-        { data: recordData, error: recordError },
-        { data: beyStatsData, error: beyStatsError },
-      ] = await Promise.all([
-        supabase
-          .from("match_participants")
-          .select("is_winner")
-          .eq("player_id", playerId),
-        supabase
-          .from("match_participants")
-          .select("beyblade_id, is_winner")
-          .eq("player_id", playerId),
-      ]);
+      const { data: battleRows, error: battleError } = await supabase
+        .from("match_participants")
+        .select("is_winner, beyblade_id, matches!inner(format)")
+        .eq("player_id", playerId);
 
       if (inventoryError) {
         console.error("Failed to load inventory:", inventoryError);
       }
 
-      if (recordError) {
-        console.error("Failed to load player record:", recordError);
+      if (battleError) {
+        console.error("Failed to load battle stats:", battleError);
       }
 
-      if (beyStatsError) {
-        console.error("Failed to load beyblade stats:", beyStatsError);
-      }
+      type BattleRow = {
+        is_winner: boolean;
+        beyblade_id: string | null;
+        matches: { format: string } | null;
+      };
 
-      const record = (recordData ?? []).reduce(
-        (acc, entry) => {
-          if (entry.is_winner) {
-            acc.wins += 1;
-          } else {
-            acc.losses += 1;
-          }
-          return acc;
-        },
-        { wins: 0, losses: 0 }
-      );
+      const rows = (battleRows ?? []) as BattleRow[];
 
-      // Calculate win/loss stats per beyblade
+      const record = rows
+        .filter((entry) => entry.matches?.format !== "tournament")
+        .reduce(
+          (acc, entry) => {
+            if (entry.is_winner) {
+              acc.wins += 1;
+            } else {
+              acc.losses += 1;
+            }
+            return acc;
+          },
+          { wins: 0, losses: 0 }
+        );
+
+      // Per-bey W/L includes tournament bracket battles
       const statsByBey = new Map<string, { wins: number; losses: number }>();
-      (beyStatsData ?? []).forEach((participant) => {
+      rows.forEach((participant) => {
         if (!participant.beyblade_id) return;
         const current = statsByBey.get(participant.beyblade_id) ?? { wins: 0, losses: 0 };
         if (participant.is_winner) {

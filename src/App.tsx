@@ -10,6 +10,7 @@ import Rules from "./pages/Rules";
 import Reports from "./pages/Reports";
 import CsvEditor from "./pages/CsvEditor";
 import BattleLogForm from "./pages/BattleLogForm";
+import TournamentBracket from "./pages/TournamentBracket";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/rules" element={<Rules />} />
           <Route path="/csv-editor" element={<CsvEditor />} />
           <Route path="/battle-log" element={<BattleLogForm />} />
+          <Route path="/tournament" element={<TournamentBracket />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

@@ -155,6 +155,7 @@ export default function Index() {
       const { data: matchData, error: matchError } = await supabase
         .from("matches")
         .select("id, played_at, match_participants(is_winner, players(display_name), beyblades(name))")
+        .neq("format", "tournament")
         .order("played_at", { ascending: false })
         .limit(5);
 
@@ -186,7 +187,7 @@ export default function Index() {
         .filter((battle): battle is RecentBattleItem => Boolean(battle));
 
       const [matchCountResult, playerCountResult] = await Promise.all([
-        supabase.from("matches").select("*", { count: "exact", head: true }),
+        supabase.from("matches").select("*", { count: "exact", head: true }).neq("format", "tournament"),
         supabase.from("players").select("*", { count: "exact", head: true }),
       ]);
 

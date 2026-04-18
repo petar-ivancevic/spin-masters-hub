@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, Swords, LayoutDashboard, Package, BookOpen, BarChart3, ClipboardList } from "lucide-react";
+import { Menu, X, Swords, LayoutDashboard, Package, BookOpen, BarChart3, ClipboardList, Trophy } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +11,7 @@ const navItems = [
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/rules", label: "Rules", icon: BookOpen },
   { href: "/battle-log", label: "Battle Log", icon: ClipboardList },
+  { href: "/tournament", label: "Tournament", icon: Trophy },
 ];
 
 export function Navbar() {
