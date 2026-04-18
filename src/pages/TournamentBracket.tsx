@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
@@ -77,6 +77,84 @@ function bracketBatchSortOrder(a: RoundMatchRow, b: RoundMatchRow): number {
   if (d !== 0) return d;
   if (a.round_index !== b.round_index) return a.round_index - b.round_index;
   return a.match_index - b.match_index;
+}
+
+function WinnersBracketMatchCard({
+  node,
+  beyName,
+  draftWinnerSide,
+  setDraftWinnerSide,
+  logBracketMatch,
+}: {
+  node: RoundMatchRow;
+  beyName: (id: string | null) => string;
+  draftWinnerSide: Record<string, "a" | "b">;
+  setDraftWinnerSide: Dispatch<SetStateAction<Record<string, "a" | "b">>>;
+  logBracketMatch: (n: RoundMatchRow) => void;
+}) {
+  const canPlay = node.beyblade_a_id && node.beyblade_b_id && !node.winner_beyblade_id;
+  const done = !!node.winner_beyblade_id;
+  const emptySlot = !node.beyblade_a_id && !node.beyblade_b_id && !node.winner_beyblade_id;
+  const waitingForOpponent =
+    !done &&
+    ((node.beyblade_a_id && !node.beyblade_b_id) || (!node.beyblade_a_id && node.beyblade_b_id));
+  const byeLine =
+    node.bracket_side === "winners" && node.round_index === 0 ? "Bye — advancing…" : "Waiting for opponent…";
+
+  return (
+    <div
+      id={`match-${node.id}`}
+      className={`relative z-[1] w-full rounded-lg border text-sm p-2 ${
+        done ? "border-border bg-secondary/20" : "border-primary/50 bg-card"
+      }`}
+    >
+      {emptySlot ? (
+        <div className="text-[10px] text-muted-foreground text-center py-2">Pending</div>
+      ) : canPlay ? (
+        <>
+          <p className="text-[10px] text-muted-foreground mb-1.5">Winner gets 1 pt</p>
+          <label className="flex items-center gap-2 cursor-pointer min-w-0 py-0.5">
+            <input
+              type="radio"
+              name={`tw-${node.id}`}
+              checked={draftWinnerSide[node.id] === "a"}
+              onChange={() => setDraftWinnerSide((s) => ({ ...s, [node.id]: "a" }))}
+              className="h-4 w-4 accent-primary shrink-0"
+            />
+            <span className="font-medium text-foreground truncate text-xs flex-1 min-w-0">
+              {beyName(node.beyblade_a_id)}
+            </span>
+          </label>
+          <div className="text-center text-[10px] text-muted-foreground py-0.5">vs</div>
+          <label className="flex items-center gap-2 cursor-pointer min-w-0 py-0.5">
+            <input
+              type="radio"
+              name={`tw-${node.id}`}
+              checked={draftWinnerSide[node.id] === "b"}
+              onChange={() => setDraftWinnerSide((s) => ({ ...s, [node.id]: "b" }))}
+              className="h-4 w-4 accent-primary shrink-0"
+            />
+            <span className="font-medium text-foreground truncate text-xs flex-1 min-w-0">
+              {beyName(node.beyblade_b_id)}
+            </span>
+          </label>
+          <Button type="button" size="sm" className="w-full h-8 mt-1.5 text-xs" onClick={() => logBracketMatch(node)}>
+            Log result
+          </Button>
+        </>
+      ) : (
+        <>
+          <div className="font-medium text-foreground leading-tight text-xs">{beyName(node.beyblade_a_id)}</div>
+          <div className="text-center text-[10px] text-muted-foreground py-0.5">vs</div>
+          <div className="font-medium text-foreground leading-tight text-xs">{beyName(node.beyblade_b_id)}</div>
+          {waitingForOpponent && <p className="text-[10px] text-muted-foreground mt-1">{byeLine}</p>}
+        </>
+      )}
+      {done && (
+        <div className="mt-1.5 text-xs text-primary font-medium">Winner: {beyName(node.winner_beyblade_id)}</div>
+      )}
+    </div>
+  );
 }
 
 export default function TournamentBracket() {
@@ -706,6 +784,25 @@ export default function TournamentBracket() {
     return 2 ** maxR;
   }, [nodes]);
 
+  /** Single elim with byes: hide auto-bye R0 rows; show only head-to-heads in "Play-in round". */
+  const winnersBracketSplitMode = useMemo(
+    () => Boolean(singleElimBracketSummary && singleElimBracketSummary.byes > 0),
+    [singleElimBracketSummary]
+  );
+
+  const winnersPlayInMatches = useMemo(() => {
+    if (!winnersBracketSplitMode) return [];
+    const r0 = winnersByRound[0] ?? [];
+    return r0
+      .filter((n) => n.beyblade_a_id && n.beyblade_b_id)
+      .sort((a, b) => a.match_index - b.match_index);
+  }, [winnersByRound, winnersBracketSplitMode]);
+
+  const winnersMainColumns = useMemo(() => {
+    if (!winnersBracketSplitMode) return winnersByRound;
+    return winnersByRound.slice(1);
+  }, [winnersByRound, winnersBracketSplitMode]);
+
   const nonWinnersGrouped = useMemo(() => {
     const g: Record<string, RoundMatchRow[]> = {};
     for (const n of nodes) {
@@ -1019,10 +1116,21 @@ export default function TournamentBracket() {
                       </p>
                     )}
                     <p className="text-xs text-muted-foreground mb-2">
-                      Each column is a round; each match sits midway between the two matches it receives from the
-                      previous round (horizontal stubs + column dividers show flow). Pick winners for this round, then use{" "}
-                      <strong className="text-foreground">Log all selected</strong> to record every ready match in order
-                      (repeat after each round if you like).
+                      {winnersBracketSplitMode ? (
+                        <>
+                          <strong className="text-foreground">Play-in round</strong> only lists real head-to-heads;
+                          auto-byes are hidden. <strong className="text-foreground">Round 1</strong> is where most beys
+                          play their first match. Columns align with feeders (stubs + dividers). Then use{" "}
+                          <strong className="text-foreground">Log all selected</strong> as needed each phase.
+                        </>
+                      ) : (
+                        <>
+                          Each column is a round; each match sits midway between the two matches it receives from the
+                          previous round (horizontal stubs + column dividers show flow). Pick winners for this round,
+                          then use <strong className="text-foreground">Log all selected</strong> to record every ready
+                          match in order (repeat after each round if you like).
+                        </>
+                      )}
                     </p>
                     <p className="text-xs text-muted-foreground mb-3">
                       Tournament 1-pt wins count toward <strong className="text-foreground">bey</strong> stats on{" "}
@@ -1030,150 +1138,101 @@ export default function TournamentBracket() {
                       (league / blader totals there exclude tournaments).
                     </p>
                     <div className="flex flex-row gap-0 overflow-x-auto pb-6 pt-2 items-stretch">
-                      {winnersByRound.map((col, ri) => (
-                        <div
-                          key={ri}
-                          className={`flex flex-col shrink-0 min-w-[168px] md:min-w-[184px] ${
-                            ri > 0 ? "pl-4 md:pl-7 border-l border-border/70" : ""
-                          }`}
-                        >
-                          <div className="text-center text-xs font-display text-muted-foreground mb-3 pb-1 border-b border-border">
-                            Round {ri + 1}
+                      {winnersBracketSplitMode && (
+                        <div className="flex flex-col shrink-0 min-w-[168px] md:min-w-[184px] pr-4 md:pr-6 border-r border-border/70">
+                          <div className="text-center text-xs font-display text-muted-foreground mb-1 pb-1 border-b border-border">
+                            Play-in round
                           </div>
+                          <p className="text-[10px] text-muted-foreground mt-2 mb-2 px-0.5 leading-snug">
+                            Auto-byes are not shown. Log the winner when both beys are listed.
+                          </p>
+                          <div className="flex flex-col gap-4 py-2 flex-1">
+                            {winnersPlayInMatches.map((node) => (
+                              <div key={node.id} className="relative py-1">
+                                <WinnersBracketMatchCard
+                                  node={node}
+                                  beyName={beyName}
+                                  draftWinnerSide={draftWinnerSide}
+                                  setDraftWinnerSide={setDraftWinnerSide}
+                                  logBracketMatch={(n) => void logBracketMatch(n)}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {winnersMainColumns.map((col, displayIdx) => {
+                        const ri = winnersBracketSplitMode ? displayIdx + 1 : displayIdx;
+                        const showLeftRule = winnersBracketSplitMode || displayIdx > 0;
+                        return (
                           <div
-                            className="grid w-full flex-1 relative"
-                            style={{
-                              gridTemplateRows: `repeat(${winnersGridRowCount}, minmax(0, 1fr))`,
-                              minHeight: `${Math.max(200, winnersGridRowCount * 40)}px`,
-                            }}
+                            key={ri}
+                            className={`flex flex-col shrink-0 min-w-[168px] md:min-w-[184px] ${
+                              showLeftRule ? "pl-4 md:pl-7 border-l border-border/70" : ""
+                            }`}
                           >
-                            {col.map((node) => {
-                              const rowSpan = 2 ** ri;
-                              const rowStart = node.match_index * rowSpan + 1;
-                              const hideRound0Structural =
-                                ri === 0 &&
-                                !node.beyblade_a_id &&
-                                !node.beyblade_b_id &&
-                                !node.winner_beyblade_id;
-                              if (hideRound0Structural) {
+                            <div className="text-center text-xs font-display text-muted-foreground mb-3 pb-1 border-b border-border">
+                              Round {displayIdx + 1}
+                            </div>
+                            <div
+                              className="grid w-full flex-1 relative"
+                              style={{
+                                gridTemplateRows: `repeat(${winnersGridRowCount}, minmax(0, 1fr))`,
+                                minHeight: `${Math.max(200, winnersGridRowCount * 40)}px`,
+                              }}
+                            >
+                              {col.map((node) => {
+                                const rowSpan = 2 ** ri;
+                                const rowStart = node.match_index * rowSpan + 1;
+                                const hideRound0Structural =
+                                  ri === 0 &&
+                                  !node.beyblade_a_id &&
+                                  !node.beyblade_b_id &&
+                                  !node.winner_beyblade_id;
+                                if (hideRound0Structural) {
+                                  return (
+                                    <div
+                                      key={node.id}
+                                      style={{ gridRow: `${rowStart} / span ${rowSpan}` }}
+                                      className="min-h-0 flex items-center opacity-0 pointer-events-none select-none"
+                                      aria-hidden
+                                    >
+                                      <div className="h-px w-full" />
+                                    </div>
+                                  );
+                                }
+
                                 return (
                                   <div
                                     key={node.id}
                                     style={{ gridRow: `${rowStart} / span ${rowSpan}` }}
-                                    className="min-h-0 flex items-center opacity-0 pointer-events-none select-none"
-                                    aria-hidden
+                                    className="relative flex items-center min-h-0 py-1"
                                   >
-                                    <div className="h-px w-full" />
+                                    {ri > 0 && (
+                                      <div
+                                        className="pointer-events-none absolute top-1/2 -translate-y-1/2 h-px bg-border/90 z-0"
+                                        style={{
+                                          left: 0,
+                                          width: "1.35rem",
+                                          marginLeft: "-1.35rem",
+                                        }}
+                                        aria-hidden
+                                      />
+                                    )}
+                                    <WinnersBracketMatchCard
+                                      node={node}
+                                      beyName={beyName}
+                                      draftWinnerSide={draftWinnerSide}
+                                      setDraftWinnerSide={setDraftWinnerSide}
+                                      logBracketMatch={(n) => void logBracketMatch(n)}
+                                    />
                                   </div>
                                 );
-                              }
-
-                              const canPlay =
-                                node.beyblade_a_id && node.beyblade_b_id && !node.winner_beyblade_id;
-                              const done = !!node.winner_beyblade_id;
-                              const emptySlot =
-                                !node.beyblade_a_id && !node.beyblade_b_id && !node.winner_beyblade_id;
-                              const waitingForOpponent =
-                                !done &&
-                                ((node.beyblade_a_id && !node.beyblade_b_id) ||
-                                  (!node.beyblade_a_id && node.beyblade_b_id));
-                              const byeLine =
-                                node.bracket_side === "winners" && node.round_index === 0
-                                  ? "Bye — advancing…"
-                                  : "Waiting for opponent…";
-
-                              return (
-                                <div
-                                  key={node.id}
-                                  style={{ gridRow: `${rowStart} / span ${rowSpan}` }}
-                                  className="relative flex items-center min-h-0 py-1"
-                                >
-                                  {ri > 0 && (
-                                    <div
-                                      className="pointer-events-none absolute top-1/2 -translate-y-1/2 h-px bg-border/90 z-0"
-                                      style={{
-                                        left: 0,
-                                        width: "1.35rem",
-                                        marginLeft: "-1.35rem",
-                                      }}
-                                      aria-hidden
-                                    />
-                                  )}
-                                  <div
-                                    id={`match-${node.id}`}
-                                    className={`relative z-[1] w-full rounded-lg border text-sm p-2 ${
-                                      done ? "border-border bg-secondary/20" : "border-primary/50 bg-card"
-                                    }`}
-                                  >
-                                    {emptySlot ? (
-                                      <div className="text-[10px] text-muted-foreground text-center py-2">Pending</div>
-                                    ) : canPlay ? (
-                                      <>
-                                        <p className="text-[10px] text-muted-foreground mb-1.5">Winner gets 1 pt</p>
-                                        <label className="flex items-center gap-2 cursor-pointer min-w-0 py-0.5">
-                                          <input
-                                            type="radio"
-                                            name={`tw-${node.id}`}
-                                            checked={draftWinnerSide[node.id] === "a"}
-                                            onChange={() =>
-                                              setDraftWinnerSide((s) => ({ ...s, [node.id]: "a" }))
-                                            }
-                                            className="h-4 w-4 accent-primary shrink-0"
-                                          />
-                                          <span className="font-medium text-foreground truncate text-xs flex-1 min-w-0">
-                                            {beyName(node.beyblade_a_id)}
-                                          </span>
-                                        </label>
-                                        <div className="text-center text-[10px] text-muted-foreground py-0.5">vs</div>
-                                        <label className="flex items-center gap-2 cursor-pointer min-w-0 py-0.5">
-                                          <input
-                                            type="radio"
-                                            name={`tw-${node.id}`}
-                                            checked={draftWinnerSide[node.id] === "b"}
-                                            onChange={() =>
-                                              setDraftWinnerSide((s) => ({ ...s, [node.id]: "b" }))
-                                            }
-                                            className="h-4 w-4 accent-primary shrink-0"
-                                          />
-                                          <span className="font-medium text-foreground truncate text-xs flex-1 min-w-0">
-                                            {beyName(node.beyblade_b_id)}
-                                          </span>
-                                        </label>
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          className="w-full h-8 mt-1.5 text-xs"
-                                          onClick={() => void logBracketMatch(node)}
-                                        >
-                                          Log result
-                                        </Button>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <div className="font-medium text-foreground leading-tight text-xs">
-                                          {beyName(node.beyblade_a_id)}
-                                        </div>
-                                        <div className="text-center text-[10px] text-muted-foreground py-0.5">vs</div>
-                                        <div className="font-medium text-foreground leading-tight text-xs">
-                                          {beyName(node.beyblade_b_id)}
-                                        </div>
-                                        {waitingForOpponent && (
-                                          <p className="text-[10px] text-muted-foreground mt-1">{byeLine}</p>
-                                        )}
-                                      </>
-                                    )}
-                                    {done && (
-                                      <div className="mt-1.5 text-xs text-primary font-medium">
-                                        Winner: {beyName(node.winner_beyblade_id)}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 
